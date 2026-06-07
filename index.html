@@ -7,20 +7,15 @@
     <style>
         :root { --bg: #000000; --text: #FFD700; --border: #FFD700; --btn-bg: #111111; --danger: #880000; }
         body { background-color: var(--bg); color: var(--text); font-family: 'Arial Black', Impact, sans-serif; margin: 0; padding: 15px; box-sizing: border-box; }
-        
-        /* 共通UIパーツ */
         .section-box { border: 3px solid var(--border); padding: 15px; margin-bottom: 20px; }
         button { display: block; width: 100%; height: 70px; background: var(--btn-bg); color: var(--text); border: 3px solid var(--border); font-size: 1.2rem; margin-bottom: 10px; cursor: pointer; font-weight: bold; }
         button:active { background: #333; }
         input { height: 60px; width: 100%; margin-bottom: 10px; background: #222; color: #fff; border: 2px solid #FFD700; font-size: 1.2rem; padding: 10px; box-sizing: border-box; }
-        
         .mode-nav { display: flex; gap: 10px; margin-bottom: 20px; }
         .active-mode { background: var(--border); color: #000; }
-        
         table { width: 100%; border-collapse: collapse; margin: 15px 0; }
         th, td { border: 1px solid var(--border); padding: 10px; text-align: center; }
-        
-        .hint { color: #aaa; font-size: 0.9rem; margin-top: 5px; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -39,29 +34,25 @@
 
     <div id="table-mode" class="hidden">
         <div class="section-box">
-            <h3>+ プレイヤーを追加</h3>
+            <h3>+ プレイヤー追加</h3>
             <input type="text" id="new-player-name" placeholder="名前を入力">
-            <button onclick="addPlayer()">この名前で追加する</button>
+            <button onclick="addPlayer()">追加する</button>
         </div>
-        
         <table id="rank-table"></table>
-        
         <button onclick="calculateSettlement()">精算結果を表示</button>
         <div id="settlement-result" style="margin: 20px 0; font-size: 1.2rem; border-top: 2px solid #FFD700; padding-top: 10px;"></div>
-        
         <button class="danger" onclick="resetData()">全データリセット</button>
     </div>
 
     <script>
-        const POINTS = [20, 10, 10];
+        const POINTS = [20, 10, 10]; // 1, 2, 3位
         let players = JSON.parse(localStorage.getItem('players') || '[]');
-        let gameStep = 'select';
+        let gameStep = 'select'; // 'select' or 'ranking'
         let selectedPlayers = [];
         let ranking = [];
 
         function save() { localStorage.setItem('players', JSON.stringify(players)); }
 
-        // --- UI制御 ---
         function setMode(mode) {
             document.getElementById('input-mode').classList.toggle('hidden', mode !== 'input');
             document.getElementById('table-mode').classList.toggle('hidden', mode !== 'table');
@@ -71,32 +62,26 @@
         }
 
         function addPlayer() {
-            const name = document.getElementById('new-player-name').value;
-            if (!name) { alert("名前を入力してください"); return; }
-            players.push({name, total:0, playCount:0, absentBonus:0});
-            document.getElementById('new-player-name').value = '';
+            const input = document.getElementById('new-player-name');
+            if (!input.value) return;
+            players.push({name: input.value, total:0, playCount:0, absentBonus:0});
+            input.value = '';
             save();
             renderTable();
-            alert(name + " さんを追加しました！");
         }
 
-        // --- ゲーム入力ロジック ---
         function renderInput() {
             const area = document.getElementById('input-area');
             area.innerHTML = '';
-            if (players.length === 0) {
-                area.innerHTML = "<p>まずは「順位表・追加」タブからプレイヤーを追加してください。</p>";
-                return;
-            }
-
             if (gameStep === 'select') {
                 document.getElementById('status-bar').innerText = "参加者を選んでください";
                 players.forEach(p => {
                     const btn = document.createElement('button');
-                    btn.innerText = selectedPlayers.includes(p) ? "✓ " + p.name : p.name;
-                    btn.style.background = selectedPlayers.includes(p) ? "#444" : "#111";
+                    const isSelected = selectedPlayers.includes(p);
+                    btn.innerText = (isSelected ? "● " : "○ ") + p.name;
+                    btn.style.background = isSelected ? "#333" : "#111";
                     btn.onclick = () => {
-                        if (selectedPlayers.includes(p)) selectedPlayers = selectedPlayers.filter(sp => sp !== p);
+                        if (isSelected) selectedPlayers = selectedPlayers.filter(sp => sp !== p);
                         else selectedPlayers.push(p);
                         renderInput();
                     };
@@ -104,14 +89,13 @@
                 });
                 if(selectedPlayers.length >= 2) {
                     const startBtn = document.createElement('button');
-                    startBtn.innerText = "ゲーム開始（選択完了）";
+                    startBtn.innerText = "選択完了：順位を入力";
                     startBtn.style.borderColor = "#fff";
-                    startBtn.onclick = () => { gameStep = 'input'; renderInput(); };
+                    startBtn.onclick = () => { gameStep = 'ranking'; ranking = []; renderInput(); };
                     area.appendChild(startBtn);
                 }
             } else {
-                const rank = ranking.length + 1;
-                document.getElementById('status-bar').innerText = `${rank}位は誰ですか？`;
+                document.getElementById('status-bar').innerText = `${ranking.length + 1}位を選択`;
                 selectedPlayers.forEach(p => {
                     if (!ranking.includes(p)) {
                         const btn = document.createElement('button');
@@ -132,7 +116,7 @@
             players.forEach(p => {
                 if (selectedPlayers.includes(p)) {
                     const idx = ranking.indexOf(p);
-                    p.total += (idx < POINTS.length ? POINTS[idx] : 0);
+                    p.total += (idx >= 0 && idx < POINTS.length) ? POINTS[idx] : 0;
                 } else {
                     p.total += avg;
                     p.absentBonus += avg;
@@ -141,41 +125,41 @@
             });
             save();
             alert("結果を保存しました！");
-            gameStep = 'select'; ranking = []; selectedPlayers = [];
+            gameStep = 'select'; selectedPlayers = []; ranking = [];
             setMode('table');
         }
 
         function renderTable() {
             const tbl = document.getElementById('rank-table');
             const sorted = [...players].sort((a,b) => b.total - a.total);
-            tbl.innerHTML = "<tr><th>名前</th><th>pt</th><th>回</th></tr>";
-            sorted.forEach(p => {
-                tbl.innerHTML += `<tr><td>${p.name}</td><td>${p.total.toFixed(1)}</td><td>${p.playCount}</td></tr>`;
+            tbl.innerHTML = "<tr><th>順位</th><th>名前</th><th>pt</th></tr>";
+            sorted.forEach((p, i) => {
+                tbl.innerHTML += `<tr><td>${i+1}位</td><td>${p.name}</td><td>${p.total.toFixed(1)}</td></tr>`;
             });
         }
 
         function calculateSettlement() {
             if(players.length < 2) return;
             const avg = players.reduce((s, p) => s + p.total, 0) / players.length;
-            let debtors = players.filter(p => p.total < avg).map(p => ({...p, d: avg - p.total}));
-            let creditors = players.filter(p => p.total >= avg).map(p => ({...p, d: p.total - avg}));
+            // 精算ロジック：小数点以下の誤差を考慮しつつループ
+            let debtors = players.filter(p => p.total < avg).map(p => ({name: p.name, diff: avg - p.total}));
+            let creditors = players.filter(p => p.total >= avg).map(p => ({name: p.name, diff: p.total - avg}));
+            
             let html = "<strong>精算リスト:</strong><br>";
             debtors.forEach(d => {
                 creditors.forEach(c => {
-                    if (d.d > 0.1 && c.d > 0.1) {
-                        const amt = Math.min(d.d, c.d);
-                        html += `<div>${d.name}→${c.name}:${amt.toFixed(1)}pt</div>`;
-                        d.d -= amt; c.d -= amt;
+                    if (d.diff > 0.01 && c.diff > 0.01) {
+                        const amt = Math.min(d.diff, c.diff);
+                        html += `<div>${d.name} → ${c.name} : ${amt.toFixed(1)}pt</div>`;
+                        d.diff -= amt; c.diff -= amt;
                     }
                 });
             });
-            document.getElementById('settlement-result').innerHTML = html || "精算不要";
+            document.getElementById('settlement-result').innerHTML = html || "全員平均値付近です";
         }
 
         function resetData() { if(confirm("全データを削除しますか？")) { localStorage.clear(); location.reload(); } }
         
-        // 初期化
-        document.getElementById('table-mode').classList.add('hidden');
         renderInput();
     </script>
 </body>
