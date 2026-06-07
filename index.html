@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>トランプ集計機</title>
+    <style>
+        body { 
+            background-color: #000; 
+            color: #FFD700; 
+            font-family: 'Segoe UI', sans-serif; 
+            padding: 15px; 
+            margin: 0;
+        }
+        h1 { text-align: center; border-bottom: 2px solid #FFD700; padding-bottom: 10px; }
+        .setup { display: flex; gap: 10px; margin-bottom: 20px; }
+        input { 
+            flex-grow: 1; padding: 15px; background: #222; border: 1px solid #FFD700; 
+            color: #FFD700; border-radius: 5px; 
+        }
+        .player-card { 
+            background: #1a1a1a; border: 1px solid #FFD700; padding: 15px; 
+            margin-bottom: 15px; border-radius: 8px; display: flex; 
+            justify-content: space-between; align-items: center; 
+        }
+        .info { font-size: 1.2em; font-weight: bold; }
+        .btn-group { display: flex; gap: 5px; }
+        button { 
+            padding: 12px 18px; border: none; border-radius: 4px; 
+            font-weight: bold; cursor: pointer; transition: 0.2s;
+        }
+        .win-btn { background: #FFD700; color: #000; }
+        .exit-btn { background: #444; color: #FFD700; }
+        button:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+
+    <h1>トランプ集計機</h1>
+
+    <div class="setup">
+        <input type="text" id="name" placeholder="プレイヤー名">
+        <button class="win-btn" onclick="addPlayer()">参加</button>
+    </div>
+
+    <div id="playerList"></div>
+
+    <script>
+        // データの読み込み
+        let players = JSON.parse(localStorage.getItem('trump_scores')) || [];
+
+        function addPlayer() {
+            const nameInput = document.getElementById('name');
+            if(nameInput.value) {
+                players.push({name: nameInput.value, score: 0, active: true});
+                nameInput.value = '';
+                saveAndRender();
+            }
+        }
+
+        function addScore(index) {
+            players[index].score += 10;
+            saveAndRender();
+        }
+
+        function toggleActive(index) {
+            players[index].active = !players[index].active;
+            saveAndRender();
+        }
+
+        function saveAndRender() {
+            localStorage.setItem('trump_scores', JSON.stringify(players));
+            render();
+        }
+
+        function render() {
+            const list = document.getElementById('playerList');
+            list.innerHTML = players.map((p, i) => `
+                <div class="player-card" style="opacity: ${p.active ? 1 : 0.4}">
+                    <div class="info">${p.name}: ${p.score}pt</div>
+                    <div class="btn-group">
+                        <button class="win-btn" onclick="addScore(${i})">+10</button>
+                        <button class="exit-btn" onclick="toggleActive(${i})">${p.active ? '離脱' : '復帰'}</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        render();
+    </script>
+</body>
+</html>
