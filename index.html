@@ -2,79 +2,200 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>TRUMP SYSTEM</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>トランプ精算システム</title>
     <style>
-        body { background: #000; color: #FFD700; font-family: sans-serif; margin: 0; padding: 20px; }
-        .big-btn { width: 100%; padding: 20px; background: #FFD700; border: none; font-weight: bold; margin-bottom: 10px; }
-        .reset-btn { background: #880000; color: #fff; }
-        .player-check { padding: 15px; border: 1px solid #FFD700; margin-bottom: 5px; display: flex; align-items: center; }
+        :root {
+            --bg: #000000;
+            --text: #FFD700;
+            --border: #FFD700;
+            --btn-bg: #111111;
+            --danger: #880000;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Arial Black', Impact, sans-serif;
+            margin: 0;
+            padding: 10px;
+            box-sizing: border-box;
+            user-select: none;
+        }
+        button {
+            display: block;
+            width: 100%;
+            height: 70px;
+            background: var(--btn-bg);
+            color: var(--text);
+            border: 3px solid var(--border);
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .danger { background: var(--danger); }
+        .mode-container { display: flex; gap: 5px; }
+        .hidden { display: none; }
+        #status-bar { border: 2px solid var(--border); padding: 10px; margin: 10px 0; font-size: 1.1rem; }
+        .player-item { padding: 10px; border-bottom: 1px solid #333; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid var(--border); padding: 8px; text-align: center; }
     </style>
 </head>
 <body>
-    <h1>TRUMP SYSTEM</h1>
-    <div id="setup">
-        <input type="text" id="pName" style="width:70%; padding:10px;">
-        <button onclick="addPlayer()">追加</button>
+
+    <div class="mode-container">
+        <button onclick="setMode('input')">INPUT MODE</button>
+        <button onclick="setMode('table')">TABLE MODE</button>
     </div>
 
-    <div id="main">
-        <h3>1. 今回の参加者（チェック）</h3>
-        <div id="checkList"></div>
-        <button class="big-btn" onclick="startRanking()">順位入力へ進む</button>
+    <div id="input-mode">
+        <div id="status-bar">準備中</div>
+        <div id="input-area"></div>
     </div>
 
-    <div id="rankArea" style="display:none;">
-        <h3 id="rankMsg"></h3>
-        <div id="rankList"></div>
+    <div id="table-mode" class="hidden">
+        <table id="rank-table"></table>
+        <button onclick="calculateSettlement()">精算計算</button>
+        <div id="settlement-result" style="margin: 10px 0;"></div>
+        <button class="danger" onclick="resetData()">全データリセット</button>
+    </div>
+
+    <div style="margin-top:20px; border:1px solid #FFD700; padding:10px;">
+        <h3>期待値補正とは？</h3>
+        <p>参加しなかったプレイヤーにも、その回の参加者平均ポイントを加算します。これにより欠席による不公平をなくし、長期的に全員を同じ期待値条件で比較できます。</p>
     </div>
 
     <script>
-        let players = JSON.parse(localStorage.getItem('data')) || [];
-        let currentMatch = [];
-        let rank = 0;
-        const POINTS = [20, 10, 10, 0];
+        // 設定値
+        const POINTS = [20, 10, 10]; // 1位, 2位, 3位
+        let players = JSON.parse(localStorage.getItem('players') || '[]');
+        let currentMode = 'input';
+        let gameStep = 'select'; // select, input
+        let selectedPlayers = [];
+        let ranking = [];
 
-        function addPlayer() {
-            let n = document.getElementById('pName').value;
-            if(n) { players.push({name:n, total:0, count:0}); localStorage.setItem('data', JSON.stringify(players)); location.reload(); }
+        // プレイヤー追加（簡易）
+        if (players.length === 0) {
+            const name = prompt("最初のプレイヤー名を入力してください");
+            if (name) players.push({name, total:0, playCount:0, absentBonus:0});
+            save();
         }
 
-        function startRanking() {
-            currentMatch = players.filter((_,i) => document.getElementById('check'+i).checked);
-            if(currentMatch.length < 2) return alert("2人以上選んでください");
-            document.getElementById('main').style.display = 'none';
-            document.getElementById('rankArea').style.display = 'block';
-            renderRank();
+        function save() { localStorage.setItem('players', JSON.stringify(players)); }
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('input-mode').classList.toggle('hidden', mode !== 'input');
+            document.getElementById('table-mode').classList.toggle('hidden', mode !== 'table');
+            if (mode === 'table') renderTable();
+            else renderInput();
         }
 
-        function renderRank() {
-            document.getElementById('rankMsg').innerText = `${rank + 1}位のプレイヤーを選択`;
-            document.getElementById('rankList').innerHTML = currentMatch.map((p,i) => 
-                `<button class="big-btn" onclick="setRank(${i})">${p.name}</button>`).join('');
+        // --- INPUT系 ---
+        function renderInput() {
+            const area = document.getElementById('input-area');
+            area.innerHTML = '';
+            if (gameStep === 'select') {
+                document.getElementById('status-bar').innerText = "参加者を選択してください";
+                players.forEach((p, i) => {
+                    const btn = document.createElement('button');
+                    btn.innerText = p.name;
+                    btn.onclick = () => {
+                        selectedPlayers.push(players[i]);
+                        btn.style.background = "#333";
+                        if(selectedPlayers.length >= 2) {
+                            const startBtn = document.createElement('button');
+                            startBtn.innerText = "ゲーム開始";
+                            startBtn.onclick = () => { gameStep = 'input'; renderInput(); };
+                            area.appendChild(startBtn);
+                        }
+                    };
+                    area.appendChild(btn);
+                });
+            } else {
+                // 順位入力
+                const rank = ranking.length + 1;
+                document.getElementById('status-bar').innerText = `現在 ${rank}位 を選択してください`;
+                
+                selectedPlayers.forEach((p, i) => {
+                    if (!ranking.includes(p)) {
+                        const btn = document.createElement('button');
+                        btn.innerText = p.name;
+                        btn.onclick = () => {
+                            ranking.push(p);
+                            if (ranking.length === selectedPlayers.length) finishGame();
+                            else renderInput();
+                        };
+                        area.appendChild(btn);
+                    }
+                });
+                
+                let history = "選択済み: ";
+                ranking.forEach((p, i) => history += `${i+1}位:${p.name} `);
+                area.innerHTML += `<div style="margin-top:10px">${history}</div>`;
+            }
         }
 
-        function setRank(idx) {
-            let p = players.find(x => x.name === currentMatch[idx].name);
-            p.total += (POINTS[rank] || 0);
-            p.count += 1;
-            currentMatch.splice(idx, 1);
-            rank++;
-            if(currentMatch.length === 0) {
-                alert("集計完了");
-                localStorage.setItem('data', JSON.stringify(players));
+        function finishGame() {
+            const avg = 40 / selectedPlayers.length;
+            players.forEach(p => {
+                const isParticipated = selectedPlayers.includes(p);
+                if (isParticipated) {
+                    const idx = ranking.indexOf(p);
+                    const pt = idx < POINTS.length ? POINTS[idx] : 0;
+                    p.total += pt;
+                    p.playCount += 1;
+                } else {
+                    p.total += avg;
+                    p.absentBonus += avg;
+                }
+            });
+            save();
+            alert("結果を保存しました");
+            gameStep = 'select';
+            ranking = [];
+            selectedPlayers = [];
+            renderInput();
+        }
+
+        // --- TABLE系 ---
+        function renderTable() {
+            const tbl = document.getElementById('rank-table');
+            const sorted = [...players].sort((a,b) => b.total - a.total);
+            tbl.innerHTML = "<tr><th>順位</th><th>名前</th><th>pt</th></tr>";
+            sorted.forEach((p, i) => {
+                tbl.innerHTML += `<tr><td>${i+1}位</td><td>${p.name}</td><td>${p.total.toFixed(1)}</td></tr>`;
+            });
+        }
+
+        function calculateSettlement() {
+            const avg = players.reduce((sum, p) => sum + p.total, 0) / players.length;
+            const debtors = players.filter(p => p.total < avg).map(p => ({...p, diff: avg - p.total}));
+            const creditors = players.filter(p => p.total >= avg).map(p => ({...p, diff: p.total - avg}));
+            
+            let html = "";
+            debtors.forEach(d => {
+                creditors.forEach(c => {
+                    if (d.diff > 0 && c.diff > 0) {
+                        const amount = Math.min(d.diff, c.diff);
+                        html += `<div>${d.name} → ${c.name} : ${amount.toFixed(1)}pt</div>`;
+                        d.diff -= amount;
+                        c.diff -= amount;
+                    }
+                });
+            });
+            document.getElementById('settlement-result').innerHTML = html || "精算不要";
+        }
+
+        function resetData() {
+            if(confirm("全データを削除しますか？")) {
+                localStorage.clear();
                 location.reload();
-            } else { renderRank(); }
+            }
         }
 
-        function resetAll() { if(confirm("全データ消去しますか？")) { localStorage.clear(); location.reload(); } }
-
-        function renderPlayers() {
-            document.getElementById('checkList').innerHTML = players.map((p,i) => 
-                `<div class="player-check"><input type="checkbox" id="check${i}"> ${p.name}</div>`).join('');
-        }
-        
-        renderPlayers();
+        setMode('input');
     </script>
-    <button class="big-btn reset-btn" onclick="resetAll()">全データリセット</button>
 </body>
 </html>
