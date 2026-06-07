@@ -6,41 +6,50 @@
     <title>トランプ精算システム</title>
     <style>
         :root { --bg: #000000; --text: #FFD700; --border: #FFD700; --btn-bg: #111111; --danger: #880000; }
-        body { background-color: var(--bg); color: var(--text); font-family: 'Arial Black', Impact, sans-serif; margin: 0; padding: 10px; box-sizing: border-box; user-select: none; }
+        body { background-color: var(--bg); color: var(--text); font-family: 'Arial Black', Impact, sans-serif; margin: 0; padding: 15px; box-sizing: border-box; }
+        
+        /* 共通UIパーツ */
+        .section-box { border: 3px solid var(--border); padding: 15px; margin-bottom: 20px; }
         button { display: block; width: 100%; height: 70px; background: var(--btn-bg); color: var(--text); border: 3px solid var(--border); font-size: 1.2rem; margin-bottom: 10px; cursor: pointer; font-weight: bold; }
-        .danger { background: var(--danger); }
-        .mode-container { display: flex; gap: 5px; }
-        .hidden { display: none; }
-        #status-bar { border: 2px solid var(--border); padding: 10px; margin: 10px 0; font-size: 1.1rem; min-height: 50px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
-        th, td { border: 1px solid var(--border); padding: 5px; text-align: center; }
-        input { height: 50px; width: 100%; margin-bottom: 10px; background: #000; color: #fff; border: 2px solid #FFD700; font-size: 1.2rem; }
+        button:active { background: #333; }
+        input { height: 60px; width: 100%; margin-bottom: 10px; background: #222; color: #fff; border: 2px solid #FFD700; font-size: 1.2rem; padding: 10px; box-sizing: border-box; }
+        
+        .mode-nav { display: flex; gap: 10px; margin-bottom: 20px; }
+        .active-mode { background: var(--border); color: #000; }
+        
+        table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        th, td { border: 1px solid var(--border); padding: 10px; text-align: center; }
+        
+        .hint { color: #aaa; font-size: 0.9rem; margin-top: 5px; }
     </style>
 </head>
 <body>
 
-    <div class="mode-container">
-        <button onclick="setMode('input')">INPUT MODE</button>
-        <button onclick="setMode('table')">TABLE MODE</button>
+    <div class="mode-nav">
+        <button id="btn-input" class="active-mode" onclick="setMode('input')">1. ゲーム入力</button>
+        <button id="btn-table" onclick="setMode('table')">2. 順位表・追加</button>
     </div>
 
     <div id="input-mode">
-        <div id="status-bar">準備中</div>
+        <div class="section-box">
+            <div id="status-bar" style="font-size: 1.5rem; text-align: center;">準備中...</div>
+        </div>
         <div id="input-area"></div>
     </div>
 
     <div id="table-mode" class="hidden">
-        <input type="text" id="new-player-name" placeholder="名前を入力...">
-        <button onclick="addPlayer()">プレイヤーを追加</button>
+        <div class="section-box">
+            <h3>+ プレイヤーを追加</h3>
+            <input type="text" id="new-player-name" placeholder="名前を入力">
+            <button onclick="addPlayer()">この名前で追加する</button>
+        </div>
+        
         <table id="rank-table"></table>
-        <button onclick="calculateSettlement()">精算計算</button>
-        <div id="settlement-result" style="margin: 10px 0;"></div>
-        <button class="danger" onclick="resetData()">全データ削除</button>
-    </div>
-
-    <div style="margin-top:20px; border:1px solid #FFD700; padding:10px;">
-        <h3>期待値補正とは？</h3>
-        <p>参加しなかったプレイヤー(休憩中)には、参加者の平均ポイントを加算します。長期的に公平な比較が可能です。</p>
+        
+        <button onclick="calculateSettlement()">精算結果を表示</button>
+        <div id="settlement-result" style="margin: 20px 0; font-size: 1.2rem; border-top: 2px solid #FFD700; padding-top: 10px;"></div>
+        
+        <button class="danger" onclick="resetData()">全データリセット</button>
     </div>
 
     <script>
@@ -52,50 +61,57 @@
 
         function save() { localStorage.setItem('players', JSON.stringify(players)); }
 
+        // --- UI制御 ---
+        function setMode(mode) {
+            document.getElementById('input-mode').classList.toggle('hidden', mode !== 'input');
+            document.getElementById('table-mode').classList.toggle('hidden', mode !== 'table');
+            document.getElementById('btn-input').className = (mode === 'input') ? 'active-mode' : '';
+            document.getElementById('btn-table').className = (mode === 'table') ? 'active-mode' : '';
+            if (mode === 'table') renderTable(); else renderInput();
+        }
+
         function addPlayer() {
             const name = document.getElementById('new-player-name').value;
-            if (!name) return;
+            if (!name) { alert("名前を入力してください"); return; }
             players.push({name, total:0, playCount:0, absentBonus:0});
             document.getElementById('new-player-name').value = '';
             save();
             renderTable();
+            alert(name + " さんを追加しました！");
         }
 
-        function setMode(mode) {
-            document.getElementById('input-mode').classList.toggle('hidden', mode !== 'input');
-            document.getElementById('table-mode').classList.toggle('hidden', mode !== 'table');
-            if (mode === 'table') renderTable(); else renderInput();
-        }
-
+        // --- ゲーム入力ロジック ---
         function renderInput() {
             const area = document.getElementById('input-area');
             area.innerHTML = '';
+            if (players.length === 0) {
+                area.innerHTML = "<p>まずは「順位表・追加」タブからプレイヤーを追加してください。</p>";
+                return;
+            }
+
             if (gameStep === 'select') {
-                document.getElementById('status-bar').innerText = "参加者を選択 (未選択は休憩扱い)";
-                players.forEach((p, i) => {
+                document.getElementById('status-bar').innerText = "参加者を選んでください";
+                players.forEach(p => {
                     const btn = document.createElement('button');
-                    btn.innerText = p.name;
+                    btn.innerText = selectedPlayers.includes(p) ? "✓ " + p.name : p.name;
+                    btn.style.background = selectedPlayers.includes(p) ? "#444" : "#111";
                     btn.onclick = () => {
-                        if (selectedPlayers.includes(p)) {
-                            selectedPlayers = selectedPlayers.filter(sp => sp !== p);
-                            btn.style.background = "#111";
-                        } else {
-                            selectedPlayers.push(p);
-                            btn.style.background = "#333";
-                        }
+                        if (selectedPlayers.includes(p)) selectedPlayers = selectedPlayers.filter(sp => sp !== p);
+                        else selectedPlayers.push(p);
+                        renderInput();
                     };
                     area.appendChild(btn);
                 });
                 if(selectedPlayers.length >= 2) {
                     const startBtn = document.createElement('button');
-                    startBtn.innerText = "ゲーム開始";
-                    startBtn.style.borderColor = "white";
+                    startBtn.innerText = "ゲーム開始（選択完了）";
+                    startBtn.style.borderColor = "#fff";
                     startBtn.onclick = () => { gameStep = 'input'; renderInput(); };
                     area.appendChild(startBtn);
                 }
             } else {
                 const rank = ranking.length + 1;
-                document.getElementById('status-bar').innerText = `${rank}位を選択`;
+                document.getElementById('status-bar').innerText = `${rank}位は誰ですか？`;
                 selectedPlayers.forEach(p => {
                     if (!ranking.includes(p)) {
                         const btn = document.createElement('button');
@@ -117,33 +133,33 @@
                 if (selectedPlayers.includes(p)) {
                     const idx = ranking.indexOf(p);
                     p.total += (idx < POINTS.length ? POINTS[idx] : 0);
-                    p.playCount += 1;
                 } else {
                     p.total += avg;
                     p.absentBonus += avg;
                 }
+                p.playCount += 1;
             });
             save();
-            alert("結果を保存しました");
+            alert("結果を保存しました！");
             gameStep = 'select'; ranking = []; selectedPlayers = [];
-            renderInput();
+            setMode('table');
         }
 
         function renderTable() {
             const tbl = document.getElementById('rank-table');
             const sorted = [...players].sort((a,b) => b.total - a.total);
-            tbl.innerHTML = "<tr><th>順位</th><th>名</th><th>pt</th><th>回</th></tr>";
-            sorted.forEach((p, i) => {
-                tbl.innerHTML += `<tr><td>${i+1}</td><td>${p.name}</td><td>${p.total.toFixed(1)}</td><td>${p.playCount}</td></tr>`;
+            tbl.innerHTML = "<tr><th>名前</th><th>pt</th><th>回</th></tr>";
+            sorted.forEach(p => {
+                tbl.innerHTML += `<tr><td>${p.name}</td><td>${p.total.toFixed(1)}</td><td>${p.playCount}</td></tr>`;
             });
         }
 
         function calculateSettlement() {
-            if(players.length === 0) return;
+            if(players.length < 2) return;
             const avg = players.reduce((s, p) => s + p.total, 0) / players.length;
             let debtors = players.filter(p => p.total < avg).map(p => ({...p, d: avg - p.total}));
             let creditors = players.filter(p => p.total >= avg).map(p => ({...p, d: p.total - avg}));
-            let html = "";
+            let html = "<strong>精算リスト:</strong><br>";
             debtors.forEach(d => {
                 creditors.forEach(c => {
                     if (d.d > 0.1 && c.d > 0.1) {
@@ -156,8 +172,11 @@
             document.getElementById('settlement-result').innerHTML = html || "精算不要";
         }
 
-        function resetData() { if(confirm("全リセット？")) { localStorage.clear(); location.reload(); } }
-        setMode('input');
+        function resetData() { if(confirm("全データを削除しますか？")) { localStorage.clear(); location.reload(); } }
+        
+        // 初期化
+        document.getElementById('table-mode').classList.add('hidden');
+        renderInput();
     </script>
 </body>
 </html>
