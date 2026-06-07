@@ -2,82 +2,87 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>TRUMP RATING SYSTEM</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@700&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRUMP SYSTEM</title>
     <style>
-        body { background: #000; color: #FFD700; font-family: 'Roboto Condensed', sans-serif; margin: 0; padding: 10px; text-transform: uppercase; }
-        h1 { border-bottom: 3px solid #FFD700; text-align: center; margin-bottom: 20px; }
+        body { background: #000; color: #FFD700; font-family: sans-serif; margin: 0; padding: 20px; text-transform: uppercase; }
+        h1 { border-bottom: 3px solid #FFD700; text-align: center; font-size: 1.5rem; }
         .mode-btn { width: 48%; padding: 15px; border: 2px solid #FFD700; background: #000; color: #FFD700; font-weight: bold; }
-        
-        /* 入力用パネル */
-        .rank-panel { background: #1a1a1a; padding: 20px; margin-top: 10px; border: 2px solid #FFD700; }
-        .rank-btn { width: 23%; padding: 20px 5px; background: #FFD700; border: none; font-weight: bold; }
-        
-        /* テーブル */
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; border: 2px solid #FFD700; }
-        th, td { border: 1px solid #FFD700; padding: 10px; text-align: center; }
-        
-        .big-btn { width: 100%; padding: 20px; background: #FFD700; color: #000; font-weight: bold; border: none; margin-top: 10px; }
-        .hidden { display: none; }
+        .big-btn { width: 100%; padding: 25px; background: #FFD700; color: #000; border: none; font-weight: bold; font-size: 1.2rem; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; color: #FFD700; }
+        th, td { border: 1px solid #FFD700; padding: 15px; text-align: center; }
+        .rule-box { border: 1px solid #FFD700; padding: 10px; margin: 20px 0; font-size: 0.8rem; }
     </style>
 </head>
 <body>
     <h1>TRUMP SYSTEM</h1>
-    <div style="display:flex; gap:4px; margin-bottom:20px;">
-        <button class="mode-btn" onclick="show('input')">1. INPUT RESULT</button>
-        <button class="mode-btn" onclick="show('table')">2. TABLE & SETTLE</button>
+    <div style="display:flex; gap:4px;">
+        <button class="mode-btn" onclick="show('input')">INPUT</button>
+        <button class="mode-btn" onclick="show('table')">TABLE</button>
     </div>
 
-    <div id="inputArea" class="input-area">
-        <div id="inputList"></div>
+    <div id="inputArea">
+        <input type="text" id="pName" placeholder="NAME" style="width:100%; padding:15px; background:#222; border:1px solid #FFD700; color:#FFD700; margin-top:20px;">
+        <button class="big-btn" onclick="addPlayer()">+ ADD PLAYER</button>
+        <div id="inputList" style="margin-top:20px;"></div>
     </div>
 
-    <div id="tableArea" class="table-area hidden">
-        <div class="rule-box" style="font-size:0.8rem; border:1px solid #FFD700; padding:10px;">
-            順位に応じ(20,10,10,0)pt配分。不参加者は平均ptを加算。
-        </div>
-        <table id="scoreTable">
-            <thead><tr><th>NAME</th><th>PLAY</th><th>PT</th></tr></thead>
-            <tbody></tbody>
-        </table>
-        <button class="big-btn" style="background:transparent; color:#FFD700; border:2px solid #FFD700;" onclick="calculateSettlement()">CALCULATE SETTLEMENT</button>
-        <div id="settlementResult" style="margin-top:20px; padding:10px; border:1px solid #FFD700;"></div>
+    <div id="tableArea" style="display:none;">
+        <div class="rule-box">不参加者には参加メンバーの平均PTを自動加算。勝負終了後にCALCULATEで精算を表示。</div>
+        <table id="scoreTable"><thead><tr><th>NAME</th><th>PLAY</th><th>PT</th></tr></thead><tbody></tbody></table>
+        <button class="big-btn" style="background:transparent; border:2px solid #FFD700; color:#FFD700;" onclick="calculateSettlement()">CALCULATE SETTLEMENT</button>
+        <div id="settlementResult" style="margin-top:20px; border:1px solid #FFD700; padding:15px;"></div>
     </div>
 
     <script>
         let players = JSON.parse(localStorage.getItem('data')) || [];
-        let currentRank = 0;
         const POINTS = [20, 10, 10, 0];
+        let currentRank = 0;
 
-        // プレイヤー追加、記録等の関数は以前と同じ
-        function addPlayer() { /* ... */ }
-
-        // 順位入力UIを動的に生成
-        function renderInput() {
-            document.getElementById('inputList').innerHTML = `
-                <h3>現在、${currentRank+1}位のプレイヤーを選択</h3>
-                ${players.map((p,i) => `
-                    <button class="big-btn" onclick="record(${i})">${p.name}</button>
-                `).join('')}
-                <button class="big-btn" style="background:#444;" onclick="record(-1)">休みの人</button>
-            `;
+        function addPlayer() {
+            let n = document.getElementById('pName').value;
+            if(n) { players.push({name:n, total:0, count:0}); localStorage.setItem('data', JSON.stringify(players)); render(); }
         }
 
         function record(idx) {
-            if (currentRank < 4) {
-                if (idx >= 0) players[idx].total += POINTS[currentRank];
-                currentRank++;
-                if (currentRank >= 4) { alert("終了！"); currentRank = 0; }
-                renderInput();
+            if(idx >= 0) players[idx].total += POINTS[currentRank];
+            currentRank++;
+            if(currentRank >= 4) {
+                let activeCount = players.filter(p=>p.selected).length;
+                let avg = POINTS.reduce((a,b)=>a+b, 0) / activeCount;
+                players.forEach(p => { if(!p.selected) p.total += avg; });
+                players.forEach(p => p.selected = false);
+                currentRank = 0; alert("NEXT GAME!");
             }
+            render();
         }
 
-        function show(m) {
-            document.getElementById('inputArea').style.display = m==='input'?'block':'none';
-            document.getElementById('tableArea').style.display = m==='table'?'block':'none';
+        function render() {
+            document.getElementById('inputList').innerHTML = `<h3>${currentRank+1}位のプレイヤー</h3>` + 
+                players.map((p,i) => `<button class="big-btn" onclick="players[${i}].selected=true; record(${i})">${p.name}</button>`).join('') +
+                `<button class="big-btn" style="background:#555" onclick="record(-1)">休みの人</button>`;
+            
+            document.querySelector('#scoreTable tbody').innerHTML = players.map(p => `
+                <tr><td>${p.name}</td><td>${p.count}</td><td>${Math.round(p.total)}</td></tr>`).join('');
         }
-        
-        renderInput(); // 初期化
+
+        function calculateSettlement() {
+            let avg = players.reduce((s,p) => s + p.total, 0) / players.length;
+            let bals = players.map(p => ({ n: p.name, b: Math.round(p.total - avg) }));
+            let d = bals.filter(b => b.b < 0).sort((a,b) => a.b - b.b);
+            let c = bals.filter(b => b.b > 0).sort((a,b) => b.b - a.b);
+            let res = "";
+            let i=0, j=0;
+            while(i < d.length && j < c.length) {
+                let amt = Math.min(-d[i].b, c[j].b);
+                res += `<div>${d[i].n} → ${c[j].n} : ${amt} PT</div>`;
+                d[i].b += amt; c[j].b -= amt;
+                if(d[i].b === 0) i++; if(c[j].b === 0) j++;
+            }
+            document.getElementById('settlementResult').innerHTML = res || "精算不要";
+        }
+        function show(m) { document.getElementById('inputArea').style.display = m==='input'?'block':'none'; document.getElementById('tableArea').style.display = m==='table'?'block':'none'; }
+        render();
     </script>
 </body>
 </html>
